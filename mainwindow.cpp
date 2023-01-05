@@ -4,6 +4,7 @@
 #include <QDir>
 #include <QMessageBox>
 #include <QSqlTableModel>
+#include <QSqlQuery>
 
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
@@ -12,6 +13,30 @@ MainWindow::MainWindow(QWidget *parent)
 {
     ui->setupUi(this);
 
+    EquipmentNames = QList<QString>({ "weapon",
+                                        "head",
+                                        "body",
+                                        "hand",
+                                        "leg",
+                                        "foot",
+                                        "earring",
+                                        "necklace",
+                                        "bracelet",
+                                        "first_ring",
+                                        "second_ring"});
+
+    EquipmentTranslatedNames = QList<QString>({"武器",
+                                               "头部",
+                                               "身体",
+                                               "手部",
+                                               "腿部",
+                                               "脚部",
+                                               "耳环",
+                                               "项链",
+                                               "手镯",
+                                               "戒指1",
+                                               "戒指2"});
+
     SetupDatabase();
     SetupTableModel("BIS");
     SetupUIContent();
@@ -19,6 +44,7 @@ MainWindow::MainWindow(QWidget *parent)
 
 MainWindow::~MainWindow()
 {
+    DataBase.close();
     delete ui;
 }
 
@@ -26,17 +52,106 @@ void MainWindow::OnQueryDistributeClicked(bool bChecked)
 {
     bCurrentDistribute = true;
     UpdateCurrentStatusText();
+
+    QSqlQuery sqlQuery(DataBase);
+    sqlQuery.exec(tr("select * from BIS where %1 = 0").arg(ui->comboBox_Equipment->currentData().toString()));
+    if (sqlQuery.isActive() && ScrolledLayout->count() > 0)
+    {
+        QLayoutItem* child;
+        while ((child = ScrolledLayout->takeAt(0)) != nullptr)
+        {
+            delete child->widget();
+            delete child;
+        }
+
+        SelectedContent = nullptr;
+    }
+
+    while (sqlQuery.next())
+    {
+        QPushButton* newButton = new QPushButton(sqlQuery.value(0).toString(), this);
+        newButton->setStyleSheet("background-color:white");
+        ScrolledLayout->addWidget(newButton);
+        connect(newButton, &QPushButton::clicked, this, &MainWindow::OnScrolledButtonClicked);
+    }
 }
 
 void MainWindow::OnQueryRequirementClicked(bool bChecked)
 {
     bCurrentDistribute = false;
     UpdateCurrentStatusText();
+
+    QSqlQuery sqlQuery(DataBase);
+    sqlQuery.exec(tr("select * from BIS where job = '%1'").arg(ui->comboBox_Job->currentData().toString()));
+    if (sqlQuery.isActive() && ScrolledLayout->count() > 0)
+    {
+        QLayoutItem* child;
+        while ((child = ScrolledLayout->takeAt(0)) != nullptr)
+        {
+            delete child->widget();
+            delete child;
+        }
+
+        SelectedContent = nullptr;
+    }
+
+    if (sqlQuery.next())
+    {
+        for (int valueIndex = 1; valueIndex < 12; ++valueIndex)
+        {
+            int requirementValue = sqlQuery.value(valueIndex).toInt();
+            if (requirementValue != 0)
+            {
+                continue;
+            }
+
+            QPushButton* newButton = new QPushButton(EquipmentTranslatedNames[valueIndex - 1], this);
+            newButton->setStyleSheet("background-color:white");
+            ScrolledLayout->addWidget(newButton);
+            connect(newButton, &QPushButton::clicked, this, &MainWindow::OnScrolledButtonClicked);
+        }
+
+    }
 }
 
 void MainWindow::OnConfirmDistributeClicked(bool bChecked)
 {
+    if (!bCurrentDistribute || SelectedContent == nullptr)
+    {
+        QMessageBox::critical(nullptr, QObject::tr("Wrong status!"),
+            QObject::tr("当前状态错误，请重新选择."), QMessageBox::Ok);
+        return;
+    }
+}
 
+void MainWindow::OnScrolledButtonClicked(bool bChecked)
+{
+    QPushButton* clickedButton = qobject_cast<QPushButton*>(sender());
+    if (clickedButton == nullptr)
+    {
+        return;
+    }
+
+    SelectedContent = clickedButton;
+    for (int childIndex = 0; childIndex < ScrolledLayout->count(); ++childIndex)
+    {
+
+        QWidget* childWidget = ScrolledLayout->itemAt(childIndex)->widget();
+        if (childWidget == nullptr)
+        {
+            continue;
+        }
+
+        if (childWidget == SelectedContent)
+        {
+            childWidget->setStyleSheet("background-color:blue");
+        }
+        else
+        {
+
+            childWidget->setStyleSheet("background-color:white");
+        }
+    }
 }
 
 void MainWindow::SetupDatabase()
@@ -46,7 +161,7 @@ void MainWindow::SetupDatabase()
     {
         QMessageBox::critical(nullptr, QObject::tr("Database file is not exists!"),
             QObject::tr("The FFXIV_BIS.db is not exists.\n"
-                        "Click Cancel to exit."), QMessageBox::Cancel);
+                        "Click Cancel to exit."), QMessageBox::Ok);
         exit(EXIT_FAILURE);
     }
 
@@ -58,7 +173,7 @@ void MainWindow::SetupDatabase()
                             "This example needs SQLite support. Please read "
                             "the Qt SQL driver documentation for information how "
                             "to build it.\n\n"
-                            "Click Cancel to exit."), QMessageBox::Cancel);
+                            "Click Cancel to exit."), QMessageBox::Ok);
             exit(EXIT_FAILURE);
         }
 }

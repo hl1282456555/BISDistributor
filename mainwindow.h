@@ -20,6 +20,7 @@ protected slots:
     void OnQueryDistributeClicked(bool bChecked);
     void OnQueryRequirementClicked(bool bChecked);
     void OnConfirmDistributeClicked(bool bChecked);
+    void OnScrolledButtonClicked(bool bChecked);
 
 protected:
     void SetupDatabase();
@@ -30,7 +31,11 @@ protected:
 private:
     Ui::MainWindow *ui;
 
+    QList<QString> EquipmentNames;
+    QList<QString> EquipmentTranslatedNames;
+
     class QVBoxLayout* ScrolledLayout;
+    class QPushButton* SelectedContent;
 
     QSqlDatabase DataBase;
     class QSqlTableModel* TableModel;
