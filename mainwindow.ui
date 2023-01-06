@@ -293,7 +293,7 @@
            </widget>
           </item>
           <item>
-           <widget class="QPushButton" name="pushButton_ConfirmDistribute">
+           <widget class="QPushButton" name="pushButton_Confirm">
             <property name="font">
              <font>
               <pointsize>12</pointsize>
@@ -301,6 +301,15 @@
             </property>
             <property name="text">
              <string>确认分配</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QComboBox" name="comboBox_EquipmentStatus">
+            <property name="font">
+             <font>
+              <pointsize>12</pointsize>
+             </font>
             </property>
            </widget>
           </item>

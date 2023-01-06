@@ -19,7 +19,7 @@ public:
 protected slots:
     void OnQueryDistributeClicked(bool bChecked);
     void OnQueryRequirementClicked(bool bChecked);
-    void OnConfirmDistributeClicked(bool bChecked);
+    void OnConfirmClicked(bool bChecked);
     void OnScrolledButtonClicked(bool bChecked);
 
 protected:
@@ -27,12 +27,15 @@ protected:
     void SetupTableModel(const QString& TableName);
     void SetupUIContent();
     void UpdateCurrentStatusText();
+    void ClearScrolledLayout();
 
 private:
     Ui::MainWindow *ui;
 
     QList<QString> EquipmentNames;
     QList<QString> EquipmentTranslatedNames;
+
+    QMap<int, QString> RequirementStatusMap;
 
     class QVBoxLayout* ScrolledLayout;
     class QPushButton* SelectedContent;

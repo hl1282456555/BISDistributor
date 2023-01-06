@@ -9,6 +9,8 @@
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
     , ui(new Ui::MainWindow)
+    , RequirementStatusMap({{0, "未拥有"}, {1, "已拥有"}, {2, "非零式"}})
+    , SelectedContent(nullptr)
     , bCurrentDistribute(true)
 {
     ui->setupUi(this);
@@ -53,24 +55,21 @@ void MainWindow::OnQueryDistributeClicked(bool bChecked)
     bCurrentDistribute = true;
     UpdateCurrentStatusText();
 
+    qDebug() << tr("select * from BIS where %1 = 0").arg(ui->comboBox_Equipment->currentData().toString());
     QSqlQuery sqlQuery(DataBase);
     sqlQuery.exec(tr("select * from BIS where %1 = 0").arg(ui->comboBox_Equipment->currentData().toString()));
     if (sqlQuery.isActive() && ScrolledLayout->count() > 0)
     {
-        QLayoutItem* child;
-        while ((child = ScrolledLayout->takeAt(0)) != nullptr)
-        {
-            delete child->widget();
-            delete child;
-        }
-
-        SelectedContent = nullptr;
+        ClearScrolledLayout();
     }
 
     while (sqlQuery.next())
     {
         QPushButton* newButton = new QPushButton(sqlQuery.value(0).toString(), this);
-        newButton->setStyleSheet("background-color:white");
+        QFont buttonFont = newButton->font();
+        buttonFont.setFamily("Microsoft YaHei UI");
+        buttonFont.setPointSize(12);
+        newButton->setFont(buttonFont);
         ScrolledLayout->addWidget(newButton);
         connect(newButton, &QPushButton::clicked, this, &MainWindow::OnScrolledButtonClicked);
     }
@@ -85,14 +84,7 @@ void MainWindow::OnQueryRequirementClicked(bool bChecked)
     sqlQuery.exec(tr("select * from BIS where job = '%1'").arg(ui->comboBox_Job->currentData().toString()));
     if (sqlQuery.isActive() && ScrolledLayout->count() > 0)
     {
-        QLayoutItem* child;
-        while ((child = ScrolledLayout->takeAt(0)) != nullptr)
-        {
-            delete child->widget();
-            delete child;
-        }
-
-        SelectedContent = nullptr;
+        ClearScrolledLayout();
     }
 
     if (sqlQuery.next())
@@ -100,13 +92,16 @@ void MainWindow::OnQueryRequirementClicked(bool bChecked)
         for (int valueIndex = 1; valueIndex < 12; ++valueIndex)
         {
             int requirementValue = sqlQuery.value(valueIndex).toInt();
-            if (requirementValue != 0)
-            {
-                continue;
-            }
 
-            QPushButton* newButton = new QPushButton(EquipmentTranslatedNames[valueIndex - 1], this);
-            newButton->setStyleSheet("background-color:white");
+            QPushButton* newButton = new QPushButton(tr("%1 ( %2 )")
+                                                    .arg(EquipmentTranslatedNames[valueIndex - 1], RequirementStatusMap[requirementValue]), this);
+            QFont buttonFont = newButton->font();
+            buttonFont.setFamily("Microsoft YaHei UI");
+            buttonFont.setPointSize(12);
+            newButton->setFont(buttonFont);
+            newButton->setProperty("requirementValue", requirementValue);
+            newButton->setProperty("equipmentName", EquipmentNames[valueIndex - 1]);
+            newButton->setProperty("equipmentTranslatedName", EquipmentTranslatedNames[valueIndex - 1]);
             ScrolledLayout->addWidget(newButton);
             connect(newButton, &QPushButton::clicked, this, &MainWindow::OnScrolledButtonClicked);
         }
@@ -114,13 +109,48 @@ void MainWindow::OnQueryRequirementClicked(bool bChecked)
     }
 }
 
-void MainWindow::OnConfirmDistributeClicked(bool bChecked)
+void MainWindow::OnConfirmClicked(bool bChecked)
 {
-    if (!bCurrentDistribute || SelectedContent == nullptr)
+    if (SelectedContent == nullptr)
     {
-        QMessageBox::critical(nullptr, QObject::tr("Wrong status!"),
-            QObject::tr("当前状态错误，请重新选择."), QMessageBox::Ok);
+        QMessageBox::warning(nullptr, QObject::tr("错误"),
+            QObject::tr("请先选择一个分配目标."), QMessageBox::Ok);
         return;
+    }
+
+    QSqlQuery sqlQuery(DataBase);
+
+    if (bCurrentDistribute)
+    {
+        sqlQuery.exec(tr("update BIS set %1 = 1 where job = '%2'").arg(ui->comboBox_Equipment->currentData().toString(), SelectedContent->text()));
+        if (sqlQuery.isActive())
+        {
+            ClearScrolledLayout();
+            TableModel->select();
+        }
+        else
+        {
+            QMessageBox::warning(nullptr, QObject::tr("错误"),
+                QObject::tr("执行更新SQL出错，请重新分配."), QMessageBox::Ok);
+        }
+    }
+    else
+    {
+        sqlQuery.exec(tr("update BIS set %1 = %2 where job = '%3' ")
+                      .arg(SelectedContent->property("equipmentName").toString())
+                      .arg(ui->comboBox_EquipmentStatus->currentData().toInt())
+                      .arg(ui->comboBox_Job->currentData().toString()));
+        sqlQuery.exec();
+
+        if (sqlQuery.isActive())
+        {
+            TableModel->select();
+
+            SelectedContent->setProperty("requirementValue", ui->comboBox_EquipmentStatus->currentData().toInt());
+            SelectedContent->setText(tr("%1 ( %2 )")
+                                     .arg(SelectedContent->property("equipmentTranslatedName").toString(),
+                                          RequirementStatusMap[SelectedContent->property("requirementValue").toInt()]));
+        }
     }
 }
 
@@ -144,12 +174,12 @@ void MainWindow::OnScrolledButtonClicked(bool bChecked)
 
         if (childWidget == SelectedContent)
         {
-            childWidget->setStyleSheet("background-color:blue");
+            childWidget->setStyleSheet("background-color:blue;color:white");
         }
         else
         {
 
-            childWidget->setStyleSheet("background-color:white");
+            childWidget->setStyleSheet("");
         }
     }
 }
@@ -159,7 +189,7 @@ void MainWindow::SetupDatabase()
     QString DBFilePath = QDir::currentPath() + tr("/FFXIV_BIS.db");
     if (!QFile::exists(DBFilePath))
     {
-        QMessageBox::critical(nullptr, QObject::tr("Database file is not exists!"),
+        QMessageBox::warning(nullptr, QObject::tr("Database file is not exists!"),
             QObject::tr("The FFXIV_BIS.db is not exists.\n"
                         "Click Cancel to exit."), QMessageBox::Ok);
         exit(EXIT_FAILURE);
@@ -168,7 +198,7 @@ void MainWindow::SetupDatabase()
     DataBase = QSqlDatabase::addDatabase("QSQLITE");
     DataBase.setDatabaseName(QDir::currentPath() + tr("/FFXIV_BIS.db"));
     if (!DataBase.open()) {
-            QMessageBox::critical(nullptr, QObject::tr("Cannot open database"),
+            QMessageBox::warning(nullptr, QObject::tr("Cannot open database"),
                 QObject::tr("Unable to establish a database connection.\n"
                             "This example needs SQLite support. Please read "
                             "the Qt SQL driver documentation for information how "
@@ -229,6 +259,14 @@ void MainWindow::SetupUIContent()
 
     ui->comboBox_Job->setCurrentIndex(0);
 
+    ui->comboBox_EquipmentStatus->addItem("未拥有", 0);
+    ui->comboBox_EquipmentStatus->addItem("已拥有", 1);
+    ui->comboBox_EquipmentStatus->addItem("非零式", 2);
+    QSizePolicy ESSPolicy = ui->comboBox_EquipmentStatus->sizePolicy();
+    ESSPolicy.setRetainSizeWhenHidden(true);
+    ui->comboBox_EquipmentStatus->setSizePolicy(ESSPolicy);
+    ui->comboBox_EquipmentStatus->hide();
+
     QWidget* scrolledWidget = new QWidget;
     ui->scrollArea_ShowContent->setWidget(scrolledWidget);
 
@@ -237,10 +275,32 @@ void MainWindow::SetupUIContent()
 
     connect(ui->pushButton_QueryDistribute, &QPushButton::clicked, this, &MainWindow::OnQueryDistributeClicked);
     connect(ui->pushButton_QueryRequirement, &QPushButton::clicked, this, &MainWindow::OnQueryRequirementClicked);
-    connect(ui->pushButton_ConfirmDistribute, &QPushButton::clicked, this, &MainWindow::OnConfirmDistributeClicked);
+    connect(ui->pushButton_Confirm, &QPushButton::clicked, this, &MainWindow::OnConfirmClicked);
 }
 
 void MainWindow::UpdateCurrentStatusText()
 {
-    ui->label_CurrentStatus->setText(tr("当前状态：%1").arg(bCurrentDistribute ? "分配" : "查询"));
+    ui->label_CurrentStatus->setText(tr("当前状态：%1").arg(bCurrentDistribute ? "分配" : "需求"));
+    ui->pushButton_Confirm->setText(bCurrentDistribute ? "确认分配" : "修改状态");
+
+    if (bCurrentDistribute)
+    {
+        ui->comboBox_EquipmentStatus->hide();
+    }
+    else
+    {
+        ui->comboBox_EquipmentStatus->show();
+    }
+}
+
+void MainWindow::ClearScrolledLayout()
+{
+    QLayoutItem* child;
+    while ((child = ScrolledLayout->takeAt(0)) != nullptr)
+    {
+        delete child->widget();
+        delete child;
+    }
+
+    SelectedContent = nullptr;
 }
